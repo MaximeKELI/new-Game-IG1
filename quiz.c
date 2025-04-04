@@ -1,553 +1,417 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdbool.h>
+#include <string.h>
+#include <ctype.h>
+#include <time.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
-#define MAX_PLAYERS 10
+#define MAX_PLAYERS 4
+#define QUESTIONS_PER_PLAYER 3  
 #define MAX_QUESTIONS 50
 #define MAX_OPTIONS 4
+#define MAX_NAME_LENGTH 50
+#define MAX_QUESTION_LENGTH 256
+#define MAX_OPTION_LENGTH 100
 
 typedef struct {
-    char name[50];
-    char surname[50];
+    char name[MAX_NAME_LENGTH];
     int score;
+    int currentQuestionIndex;
+    int questionIndices[QUESTIONS_PER_PLAYER];
 } Player;
 
 typedef struct {
-    char question[256];
-    char options[MAX_OPTIONS][100];
+    char question[MAX_QUESTION_LENGTH];
+    char options[MAX_OPTIONS][MAX_OPTION_LENGTH];
     int correctAnswer;
+    bool used;
 } Question;
 
-Player players[MAX_PLAYERS];
 Question questions[MAX_QUESTIONS];
+Player players[MAX_PLAYERS];
 int numPlayers = 0;
 int currentPlayer = 0;
-int currentQuestion = 0;
-bool quizFinished = false;
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 TTF_Font* font = NULL;
-SDL_Color textColor = { 0, 0, 0, 255 };
-SDL_Color backgroundColor = { 240, 240, 240, 255 };
-SDL_Color buttonColor = { 100, 149, 237, 255 };
-SDL_Color buttonHoverColor = { 65, 105, 225, 255 };
-
-void initializeQuestions() {
-    // Question 1
-    strcpy(questions[0].question, "Quel langage a ete cree par Bjarne Stroustrup?");
-    strcpy(questions[0].options[0], "Java");
-    strcpy(questions[0].options[1], "C");
-    strcpy(questions[0].options[2], "C++");
-    strcpy(questions[0].options[3], "Python");
-    questions[0].correctAnswer = 2;
-
-    // Question 2
-    strcpy(questions[1].question, "Quel est le systeme d'exploitation open source le plus populaire?");
-    strcpy(questions[1].options[0], "Windows");
-    strcpy(questions[1].options[1], "macOS");
-    strcpy(questions[1].options[2], "Linux");
-    strcpy(questions[1].options[3], "iOS");
-    questions[1].correctAnswer = 2;
-
-    // Question 3
-    strcpy(questions[2].question, "Quelle est la fonction principale en C?");
-    strcpy(questions[2].options[0], "main()");
-    strcpy(questions[2].options[1], "start()");
-    strcpy(questions[2].options[2], "init()");
-    strcpy(questions[2].options[3], "run()");
-    questions[2].correctAnswer = 0;
-
-    // Question 4
-    strcpy(questions[3].question, "Quel est le protocole utilise pour les pages web?");
-    strcpy(questions[3].options[0], "FTP");
-    strcpy(questions[3].options[1], "HTTP");
-    strcpy(questions[3].options[2], "SMTP");
-    strcpy(questions[3].options[3], "TCP");
-    questions[3].correctAnswer = 1;
-
-    // Question 5
-    strcpy(questions[4].question, "Quel est le langage de style utilise pour les pages web?");
-    strcpy(questions[4].options[0], "HTML");
-    strcpy(questions[4].options[1], "JavaScript");
-    strcpy(questions[4].options[2], "CSS");
-    strcpy(questions[4].options[3], "PHP");
-    questions[4].correctAnswer = 2;
-
-    // Ajoutez plus de questions ici...
-    // Je vais en ajouter quelques-unes pour l'exemple, mais vous devriez en ajouter 50
-
-    // Question 6
-    strcpy(questions[5].question, "Quelle entreprise a developpe le langage Java?");
-    strcpy(questions[5].options[0], "Microsoft");
-    strcpy(questions[5].options[1], "Sun Microsystems");
-    strcpy(questions[5].options[2], "Apple");
-    strcpy(questions[5].options[3], "IBM");
-    questions[5].correctAnswer = 1;
-
-    // Question 7
-    strcpy(questions[6].question, "Quel est le nom du premier ordinateur electronique?");
-    strcpy(questions[6].options[0], "ENIAC");
-    strcpy(questions[6].options[1], "UNIVAC");
-    strcpy(questions[6].options[2], "IBM 701");
-    strcpy(questions[6].options[3], "Colossus");
-    questions[6].correctAnswer = 0;
-
-    // Question 8
-    strcpy(questions[7].question, "Quel est le composant principal d'un ordinateur qui execute les instructions?");
-    strcpy(questions[7].options[0], "GPU");
-    strcpy(questions[7].options[1], "RAM");
-    strcpy(questions[7].options[2], "CPU");
-    strcpy(questions[7].options[3], "Disque dur");
-    questions[7].correctAnswer = 2;
-
-    // Question 9
-    strcpy(questions[8].question, "Quel est le format de fichier pour les images avec transparence?");
-    strcpy(questions[8].options[0], "JPG");
-    strcpy(questions[8].options[1], "BMP");
-    strcpy(questions[8].options[2], "PNG");
-    strcpy(questions[8].options[3], "GIF");
-    questions[8].correctAnswer = 2;
-
-    // Question 10
-    strcpy(questions[9].question, "Quelle est la plus grande unite de stockage parmi ces options?");
-    strcpy(questions[9].options[0], "Kilobyte");
-    strcpy(questions[9].options[1], "Megabyte");
-    strcpy(questions[9].options[2], "Gigabyte");
-    strcpy(questions[9].options[3], "Terabyte");
-    questions[9].correctAnswer = 3;
-
-    // Ajoutez les 40 questions restantes de la meme maniere...
-}
+SDL_Color textColor = { 255, 255, 255, 255 };
+SDL_Color highlightColor = { 255, 215, 0, 255 };
 
 void initializeSDL() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
-        exit(1);
+        fprintf(stderr, "Erreur SDL_Init: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
     }
 
     if (TTF_Init() == -1) {
-        printf("TTF could not initialize! TTF_Error: %s\n", TTF_GetError());
-        exit(1);
+        fprintf(stderr, "Erreur TTF_Init: %s\n", TTF_GetError());
+        exit(EXIT_FAILURE);
     }
 
-    window = SDL_CreateWindow("Quiz Informatique", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    if (window == NULL) {
-        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
-        exit(1);
+    window = SDL_CreateWindow("Quiz Informatique", 
+                            SDL_WINDOWPOS_CENTERED,
+                            SDL_WINDOWPOS_CENTERED,
+                            SCREEN_WIDTH, SCREEN_HEIGHT,
+                            SDL_WINDOW_SHOWN);
+    if (!window) {
+        fprintf(stderr, "Erreur création fenêtre: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
     }
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (renderer == NULL) {
-        printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
-        exit(1);
+    renderer = SDL_CreateRenderer(window, -1, 
+                                SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!renderer) {
+        fprintf(stderr, "Erreur création renderer: %s\n", SDL_GetError());
+        exit(EXIT_FAILURE);
     }
 
-    font = TTF_OpenFont("arial.ttf", 24);
-    if (font == NULL) {
-        printf("Failed to load font! TTF_Error: %s\n", TTF_GetError());
-        // Essayez une police par défaut
-        font = TTF_OpenFont("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 24);
-        if (font == NULL) {
-            exit(1);
+    const char* fontPaths[] = {
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        NULL
+    };
+
+    int i = 0;
+    while (fontPaths[i] && !font) {
+        font = TTF_OpenFont(fontPaths[i], 24);
+        if (!font) {
+            fprintf(stderr, "Essai police %s échoué: %s\n", fontPaths[i], TTF_GetError());
         }
+        i++;
+    }
+
+    if (!font) {
+        fprintf(stderr, "\nERREUR: Aucune police trouvée!\n");
+        fprintf(stderr, "Installez des polices avec:\n");
+        fprintf(stderr, "sudo apt install fonts-freefont-ttf ttf-dejavu-core fonts-liberation\n");
+        exit(EXIT_FAILURE);
     }
 }
 
 void closeSDL() {
-    TTF_CloseFont(font);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    if (font) TTF_CloseFont(font);
+    if (renderer) SDL_DestroyRenderer(renderer);
+    if (window) SDL_DestroyWindow(window);
     TTF_Quit();
     SDL_Quit();
 }
 
 void renderText(const char* text, int x, int y, SDL_Color color) {
-    SDL_Surface* surface = TTF_RenderText_Solid(font, text, color);
-    if (surface == NULL) {
-        printf("Unable to render text surface! SDL_ttf Error: %s\n", TTF_GetError());
+    SDL_Surface* surface = TTF_RenderText_Blended(font, text, color);
+    if (!surface) {
+        fprintf(stderr, "Erreur création surface texte: %s\n", TTF_GetError());
         return;
     }
 
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    if (texture == NULL) {
-        printf("Unable to create texture from rendered text! SDL Error: %s\n", SDL_GetError());
+    if (!texture) {
+        fprintf(stderr, "Erreur création texture: %s\n", SDL_GetError());
         SDL_FreeSurface(surface);
         return;
     }
 
-    SDL_Rect renderQuad = { x, y, surface->w, surface->h };
-    SDL_RenderCopy(renderer, texture, NULL, &renderQuad);
-
+    SDL_Rect rect = { x, y, surface->w, surface->h };
+    SDL_RenderCopy(renderer, texture, NULL, &rect);
+    
     SDL_DestroyTexture(texture);
     SDL_FreeSurface(surface);
 }
 
-bool isMouseOverButton(int mouseX, int mouseY, SDL_Rect button) {
-    return (mouseX >= button.x && mouseX <= button.x + button.w &&
-            mouseY >= button.y && mouseY <= button.y + button.h);
-}
-
-void renderButton(const char* text, SDL_Rect rect, bool isHovered) {
-    SDL_Color color = isHovered ? buttonHoverColor : buttonColor;
-    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_RenderFillRect(renderer, &rect);
-
-    // Bordure du bouton
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderDrawRect(renderer, &rect);
-
-    // Centrer le texte dans le bouton
-    int textWidth, textHeight;
-    TTF_SizeText(font, text, &textWidth, &textHeight);
-    int textX = rect.x + (rect.w - textWidth) / 2;
-    int textY = rect.y + (rect.h - textHeight) / 2;
-
-    renderText(text, textX, textY, textColor);
-}
-
-void renderPlayerInputScreen() {
-    SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
-    SDL_RenderClear(renderer);
-
-    renderText("Entrez le nombre de joueurs (1-10):", 50, 50, textColor);
-
-    // Afficher le nombre actuel de joueurs
-    char numText[50];
-    sprintf(numText, "%d", numPlayers);
-    renderText(numText, 400, 50, textColor);
-
-    // Boutons + et -
-    SDL_Rect plusButton = { 450, 45, 40, 40 };
-    SDL_Rect minusButton = { 500, 45, 40, 40 };
+void initializeQuestions() {
+    srand(time(NULL));
     
-    int mouseX, mouseY;
-    SDL_GetMouseState(&mouseX, &mouseY);
+    // Question 1
+    strncpy(questions[0].question, "Quel langage a inspiré C++?", MAX_QUESTION_LENGTH - 1);
+    strncpy(questions[0].options[0], "C", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[0].options[1], "Java", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[0].options[2], "Python", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[0].options[3], "Assembly", MAX_OPTION_LENGTH - 1);
+    questions[0].correctAnswer = 0;
+    questions[0].used = false;
+
+    // Question 2
+    strncpy(questions[1].question, "Quelle commande Linux liste les fichiers?", MAX_QUESTION_LENGTH - 1);
+    strncpy(questions[1].options[0], "dir", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[1].options[1], "ls", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[1].options[2], "list", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[1].options[3], "show", MAX_OPTION_LENGTH - 1);
+    questions[1].correctAnswer = 1;
+    questions[1].used = false;
+
+    // Question 3
+    strncpy(questions[2].question, "Quel est le gestionnaire de paquets de Ubuntu?", MAX_QUESTION_LENGTH - 1);
+    strncpy(questions[2].options[0], "yum", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[2].options[1], "pacman", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[2].options[2], "apt", MAX_OPTION_LENGTH - 1);
+    strncpy(questions[2].options[3], "dnf", MAX_OPTION_LENGTH - 1);
+    questions[2].correctAnswer = 2;
+    questions[2].used = false;
+
     
-    renderButton("+", plusButton, isMouseOverButton(mouseX, mouseY, plusButton));
-    renderButton("-", minusButton, isMouseOverButton(mouseX, mouseY, minusButton));
-
-    // Bouton suivant
-    SDL_Rect nextButton = { 300, 500, 200, 50 };
-    renderButton("Suivant", nextButton, isMouseOverButton(mouseX, mouseY, nextButton));
-
-    SDL_RenderPresent(renderer);
+    for (int i = 3; i < MAX_QUESTIONS; i++) {
+        questions[i].used = true;
+    }
 }
 
-void renderNameInputScreen() {
-    SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
-    SDL_RenderClear(renderer);
-
-    char prompt[100];
-    sprintf(prompt, "Joueur %d - Entrez votre nom et prenom:", currentPlayer + 1);
-    renderText(prompt, 50, 50, textColor);
-
-    // Afficher le nom et prénom actuels
-    renderText("Nom:", 50, 150, textColor);
-    renderText(players[currentPlayer].surname, 200, 150, textColor);
-
-    renderText("Prenom:", 50, 250, textColor);
-    renderText(players[currentPlayer].name, 200, 250, textColor);
-
-    // Bouton suivant
-    SDL_Rect nextButton = { 300, 500, 200, 50 };
-    int mouseX, mouseY;
-    SDL_GetMouseState(&mouseX, &mouseY);
-    renderButton("Suivant", nextButton, isMouseOverButton(mouseX, mouseY, nextButton));
-
-    SDL_RenderPresent(renderer);
-}
-
-void renderQuestionScreen() {
-    SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
-    SDL_RenderClear(renderer);
-
-    // Afficher le joueur actuel et son score
-    char playerInfo[100];
-    sprintf(playerInfo, "Joueur: %s %s - Score: %d", 
-            players[currentPlayer].name, 
-            players[currentPlayer].surname, 
-            players[currentPlayer].score);
-    renderText(playerInfo, 50, 30, textColor);
-
-    // Afficher la question
-    renderText(questions[currentQuestion].question, 50, 100, textColor);
-
-    // Afficher les options
-    int mouseX, mouseY;
-    SDL_GetMouseState(&mouseX, &mouseY);
-
-    for (int i = 0; i < MAX_OPTIONS; i++) {
-        SDL_Rect optionRect = { 100, 200 + i * 80, 600, 60 };
-        bool isHovered = isMouseOverButton(mouseX, mouseY, optionRect);
-        renderButton(questions[currentQuestion].options[i], optionRect, isHovered);
+void assignQuestionsToPlayers() {
+    
+    for (int i = 0; i < 3; i++) {
+        questions[i].used = false;
     }
 
-    SDL_RenderPresent(renderer);
-}
-
-void renderFeedbackScreen(bool isCorrect) {
-    SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
-    SDL_RenderClear(renderer);
-
-    if (isCorrect) {
-        renderText("Bonne reponse!", 300, 200, (SDL_Color){0, 128, 0, 255});
-    } else {
-        char correctAnswer[150];
-        sprintf(correctAnswer, "Mauvaise reponse! La bonne reponse etait: %s", 
-                questions[currentQuestion].options[questions[currentQuestion].correctAnswer]);
-        renderText(correctAnswer, 100, 200, (SDL_Color){128, 0, 0, 255});
-    }
-
-    // Bouton continuer
-    SDL_Rect continueButton = { 300, 400, 200, 50 };
-    int mouseX, mouseY;
-    SDL_GetMouseState(&mouseX, &mouseY);
-    renderButton("Continuer", continueButton, isMouseOverButton(mouseX, mouseY, continueButton));
-
-    SDL_RenderPresent(renderer);
-}
-
-void renderLeaderboard() {
-    SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
-    SDL_RenderClear(renderer);
-
-    renderText("Classement final:", 300, 50, textColor);
-
-    // Trier les joueurs par score (tri à bulles simple)
-    for (int i = 0; i < numPlayers - 1; i++) {
-        for (int j = 0; j < numPlayers - i - 1; j++) {
-            if (players[j].score < players[j + 1].score) {
-                Player temp = players[j];
-                players[j] = players[j + 1];
-                players[j + 1] = temp;
-            }
+    for (int p = 0; p < numPlayers; p++) {
+        
+        for (int i = 0; i < 3; i++) {
+            players[p].questionIndices[i] = i;
         }
+        
+        players[p].currentQuestionIndex = 0;
+        players[p].score = 0;
     }
-
-    // Afficher le classement
-    for (int i = 0; i < numPlayers; i++) {
-        char entry[150];
-        sprintf(entry, "%d. %s %s - %d points", i + 1, players[i].name, players[i].surname, players[i].score);
-        renderText(entry, 100, 150 + i * 50, textColor);
-    }
-
-    // Bouton quitter
-    SDL_Rect quitButton = { 300, 500, 200, 50 };
-    int mouseX, mouseY;
-    SDL_GetMouseState(&mouseX, &mouseY);
-    renderButton("Quitter", quitButton, isMouseOverButton(mouseX, mouseY, quitButton));
-
-    SDL_RenderPresent(renderer);
 }
 
-void handlePlayerInputScreen(SDL_Event* e) {
-    if (e->type == SDL_MOUSEBUTTONDOWN) {
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
+void getNumberOfPlayers() {
+    SDL_Event e;
+    bool done = false;
 
-        SDL_Rect plusButton = { 450, 45, 40, 40 };
-        SDL_Rect minusButton = { 500, 45, 40, 40 };
-        SDL_Rect nextButton = { 300, 500, 200, 50 };
-
-        if (isMouseOverButton(mouseX, mouseY, plusButton) && numPlayers < MAX_PLAYERS) {
-            numPlayers++;
-        } else if (isMouseOverButton(mouseX, mouseY, minusButton) && numPlayers > 1) {
-            numPlayers--;
-        } else if (isMouseOverButton(mouseX, mouseY, nextButton) && numPlayers > 0) {
-            currentPlayer = 0;
-            // Initialiser les joueurs
-            for (int i = 0; i < numPlayers; i++) {
-                strcpy(players[i].name, "");
-                strcpy(players[i].surname, "");
-                players[i].score = 0;
+    while (!done) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                exit(EXIT_SUCCESS);
             }
-        }
-    }
-}
-
-void handleNameInputScreen(SDL_Event* e) {
-    static bool editingName = false;
-    static bool editingSurname = false;
-    static int nameLength = 0;
-    static int surnameLength = 0;
-
-    if (e->type == SDL_MOUSEBUTTONDOWN) {
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
-
-        // Vérifier si on clique sur les zones de texte
-        if (mouseX >= 200 && mouseX <= 600) {
-            if (mouseY >= 150 && mouseY <= 190) {
-                editingSurname = true;
-                editingName = false;
-            } else if (mouseY >= 250 && mouseY <= 290) {
-                editingName = true;
-                editingSurname = false;
-            } else {
-                editingName = false;
-                editingSurname = false;
+            else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym >= SDLK_1 && e.key.keysym.sym <= SDLK_4) {
+                    numPlayers = e.key.keysym.sym - SDLK_0;
+                    done = true;
+                }
+                else if (e.key.keysym.sym == SDLK_ESCAPE) {
+                    exit(EXIT_SUCCESS);
+                }
             }
         }
 
-        // Vérifier le bouton suivant
-        SDL_Rect nextButton = { 300, 500, 200, 50 };
-        if (isMouseOverButton(mouseX, mouseY, nextButton) && 
-            strlen(players[currentPlayer].name) > 0 && 
-            strlen(players[currentPlayer].surname) > 0) {
-            
-            if (currentPlayer < numPlayers - 1) {
-                currentPlayer++;
-                editingName = false;
-                editingSurname = false;
-                nameLength = 0;
-                surnameLength = 0;
-            } else {
-                currentPlayer = 0;
-                currentQuestion = 0;
-                quizFinished = false;
-            }
-        }
-    } else if (e->type == SDL_KEYDOWN && (editingName || editingSurname)) {
-        if (e->key.keysym.sym == SDLK_BACKSPACE) {
-            if (editingSurname && surnameLength > 0) {
-                players[currentPlayer].surname[--surnameLength] = '\0';
-            } else if (editingName && nameLength > 0) {
-                players[currentPlayer].name[--nameLength] = '\0';
-            }
-        } else if ((e->key.keysym.sym == SDLK_RETURN || e->key.keysym.sym == SDLK_KP_ENTER)) {
-            editingName = false;
-            editingSurname = false;
-        }
-    } else if (e->type == SDL_TEXTINPUT && (editingName || editingSurname)) {
-        if (editingSurname && surnameLength < 49) {
-            players[currentPlayer].surname[surnameLength++] = e->text.text[0];
-            players[currentPlayer].surname[surnameLength] = '\0';
-        } else if (editingName && nameLength < 49) {
-            players[currentPlayer].name[nameLength++] = e->text.text[0];
-            players[currentPlayer].name[nameLength] = '\0';
-        }
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        renderText("QUIZ INFORMATIQUE", SCREEN_WIDTH/2 - 150, 50, highlightColor);
+        renderText("Combien de joueurs? (1-4)", SCREEN_WIDTH/2 - 150, 150, textColor);
+        renderText("Appuyez sur 1, 2, 3 ou 4", SCREEN_WIDTH/2 - 150, 200, textColor);
+
+        SDL_RenderPresent(renderer);
     }
 }
 
-void handleQuestionScreen(SDL_Event* e) {
-    if (e->type == SDL_MOUSEBUTTONDOWN) {
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
+void getPlayerNames() {
+    SDL_Event e;
+    char name[MAX_NAME_LENGTH] = "";
+    int nameLength = 0;
+    int currentPlayerInput = 0;
 
+    while (currentPlayerInput < numPlayers) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                exit(EXIT_SUCCESS);
+            }
+            else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym == SDLK_RETURN && nameLength > 0) {
+                    strncpy(players[currentPlayerInput].name, name, MAX_NAME_LENGTH - 1);
+                    players[currentPlayerInput].name[MAX_NAME_LENGTH - 1] = '\0';
+                    currentPlayerInput++;
+                    name[0] = '\0';
+                    nameLength = 0;
+                }
+                else if (e.key.keysym.sym == SDLK_BACKSPACE && nameLength > 0) {
+                    name[--nameLength] = '\0';
+                }
+                else if (nameLength < MAX_NAME_LENGTH - 1 && isprint(e.key.keysym.sym)) {
+                    name[nameLength++] = e.key.keysym.sym;
+                    name[nameLength] = '\0';
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        char prompt[100];
+        snprintf(prompt, sizeof(prompt), "Entrez le nom du joueur %d:", currentPlayerInput + 1);
+        renderText(prompt, SCREEN_WIDTH/2 - 150, 150, textColor);
+        
+        char namePrompt[MAX_NAME_LENGTH + 50] = "Nom: ";
+        strncat(namePrompt, name, sizeof(namePrompt) - strlen(namePrompt) - 1);
+        renderText(namePrompt, SCREEN_WIDTH/2 - 150, 200, textColor);
+        renderText("Appuyez sur Entrée pour valider", SCREEN_WIDTH/2 - 150, 250, textColor);
+
+        SDL_RenderPresent(renderer);
+    }
+}
+
+void showQuestion() {
+    Player* current = &players[currentPlayer];
+    if (current->currentQuestionIndex >= 3) {  
+        currentPlayer = (currentPlayer + 1) % numPlayers;
+        return;
+    }
+
+    int qIndex = current->questionIndices[current->currentQuestionIndex];
+    Question* q = &questions[qIndex];
+    
+    SDL_Event e;
+    bool answered = false;
+    int selectedOption = -1;
+
+    while (!answered) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                exit(EXIT_SUCCESS);
+            }
+            else if (e.type == SDL_KEYDOWN) {
+                if (e.key.keysym.sym >= SDLK_1 && e.key.keysym.sym <= SDLK_4) {
+                    selectedOption = e.key.keysym.sym - SDLK_1;
+                    answered = true;
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        
+        char playerInfo[100];
+        snprintf(playerInfo, sizeof(playerInfo), "Joueur: %s - Score: %d", 
+                current->name, current->score);
+        renderText(playerInfo, 50, 30, textColor);
+
+        
+        renderText(q->question, 50, 100, highlightColor);
+
+        
         for (int i = 0; i < MAX_OPTIONS; i++) {
-            SDL_Rect optionRect = { 100, 200 + i * 80, 600, 60 };
-            if (isMouseOverButton(mouseX, mouseY, optionRect)) {
-                if (i == questions[currentQuestion].correctAnswer) {
-                    players[currentPlayer].score += 10;
-                }
+            char optionText[150];
+            snprintf(optionText, sizeof(optionText), "%d. %s", i+1, q->options[i]);
+            renderText(optionText, 100, 180 + i * 40, textColor);
+        }
+
+        renderText("Choisissez une option (1-4):", 50, 350, textColor);
+
+        SDL_RenderPresent(renderer);
+    }
+
+    
+    if (selectedOption == q->correctAnswer) {
+        current->score += 10;
+        
+        SDL_SetRenderDrawColor(renderer, 0, 50, 0, 255);
+        SDL_RenderClear(renderer);
+        renderText("Bonne réponse!", SCREEN_WIDTH/2 - 100, 200, highlightColor);
+        SDL_RenderPresent(renderer);
+        SDL_Delay(1500);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 50, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        renderText("Mauvaise réponse!", SCREEN_WIDTH/2 - 100, 200, highlightColor);
+        
+        char correctAnswer[256];
+        snprintf(correctAnswer, sizeof(correctAnswer), "La bonne réponse était: %s", 
+                q->options[q->correctAnswer]);
+        renderText(correctAnswer, SCREEN_WIDTH/2 - 200, 250, textColor);
+        
+        SDL_RenderPresent(renderer);
+        SDL_Delay(2000);
+    }
+
+    current->currentQuestionIndex++;
+    currentPlayer = (currentPlayer + 1) % numPlayers;
+}
+
+bool allPlayersFinished() {
+    for (int i = 0; i < numPlayers; i++) {
+        if (players[i].currentQuestionIndex < 3) {  
+            return false;
+        }
+    }
+    return true;
+}
+
+void showWinners() {
+    
+    int maxScore = 0;
+    for (int i = 0; i < numPlayers; i++) {
+        if (players[i].score > maxScore) {
+            maxScore = players[i].score;
+        }
+    }
+
+    
+    int winnerCount = 0;
+    for (int i = 0; i < numPlayers; i++) {
+        if (players[i].score == maxScore) {
+            winnerCount++;
+        }
+    }
+
+    SDL_Event e;
+    bool done = false;
+
+    while (!done) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT || e.type == SDL_KEYDOWN) {
+                done = true;
             }
         }
-    }
-}
 
-void handleFeedbackScreen(SDL_Event* e) {
-    if (e->type == SDL_MOUSEBUTTONDOWN) {
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 50, 255);
+        SDL_RenderClear(renderer);
 
-        SDL_Rect continueButton = { 300, 400, 200, 50 };
-        if (isMouseOverButton(mouseX, mouseY, continueButton)) {
-            currentQuestion++;
-            if (currentQuestion >= 10) { // Changez ceci à MAX_QUESTIONS quand vous aurez toutes les questions
-                currentPlayer++;
-                if (currentPlayer >= numPlayers) {
-                    quizFinished = true;
-                } else {
-                    currentQuestion = 0;
-                }
+        if (winnerCount == 1) {
+            renderText("VAINQUEUR:", SCREEN_WIDTH/2 - 100, 50, highlightColor);
+        } else {
+            renderText("VAINQUEURS (ex-aequo):", SCREEN_WIDTH/2 - 150, 50, highlightColor);
+        }
+
+ 
+        int yPos = 150;
+        for (int i = 0; i < numPlayers; i++) {
+            char scoreText[100];
+            snprintf(scoreText, sizeof(scoreText), "%s: %d points", 
+                    players[i].name, players[i].score);
+            
+            if (players[i].score == maxScore) {
+                renderText(scoreText, SCREEN_WIDTH/2 - 150, yPos, highlightColor);
+            } else {
+                renderText(scoreText, SCREEN_WIDTH/2 - 150, yPos, textColor);
             }
+            yPos += 40;
         }
+
+        renderText("Appuyez sur une touche pour quitter", 
+                 SCREEN_WIDTH/2 - 200, 400, textColor);
+
+        SDL_RenderPresent(renderer);
     }
 }
 
-void handleLeaderboard(SDL_Event* e) {
-    if (e->type == SDL_MOUSEBUTTONDOWN) {
-        int mouseX, mouseY;
-        SDL_GetMouseState(&mouseX, &mouseY);
-
-        SDL_Rect quitButton = { 300, 500, 200, 50 };
-        if (isMouseOverButton(mouseX, mouseY, quitButton)) {
-            exit(0);
-        }
-    }
-}
-
-int main(int argc, char* args[]) {
+int main() {
     initializeSDL();
     initializeQuestions();
+    
+    getNumberOfPlayers();
+    getPlayerNames();
+    assignQuestionsToPlayers();
 
-    bool running = true;
-    SDL_Event e;
-
-    enum { PLAYER_COUNT, NAME_INPUT, QUESTION, FEEDBACK, LEADERBOARD } gameState = PLAYER_COUNT;
-
-    while (running) {
-        while (SDL_PollEvent(&e) != 0) {
-            if (e.type == SDL_QUIT) {
-                running = false;
-            }
-
-            switch (gameState) {
-                case PLAYER_COUNT:
-                    handlePlayerInputScreen(&e);
-                    if (numPlayers > 0 && currentPlayer == 0 && strlen(players[0].name) > 0) {
-                        gameState = NAME_INPUT;
-                    }
-                    break;
-                case NAME_INPUT:
-                    handleNameInputScreen(&e);
-                    if (currentPlayer == 0 && currentQuestion == 0 && !quizFinished) {
-                        gameState = QUESTION;
-                    }
-                    break;
-                case QUESTION:
-                    handleQuestionScreen(&e);
-                    gameState = FEEDBACK;
-                    break;
-                case FEEDBACK:
-                    handleFeedbackScreen(&e);
-                    if (quizFinished) {
-                        gameState = LEADERBOARD;
-                    } else {
-                        gameState = QUESTION;
-                    }
-                    break;
-                case LEADERBOARD:
-                    handleLeaderboard(&e);
-                    break;
-            }
-        }
-
-        switch (gameState) {
-            case PLAYER_COUNT:
-                renderPlayerInputScreen();
-                break;
-            case NAME_INPUT:
-                renderNameInputScreen();
-                break;
-            case QUESTION:
-                renderQuestionScreen();
-                break;
-            case FEEDBACK:
-                renderFeedbackScreen(players[currentPlayer].score % 10 == 0); // Simplification pour l'exemple
-                break;
-            case LEADERBOARD:
-                renderLeaderboard();
-                break;
-        }
+    while (!allPlayersFinished()) {
+        showQuestion();
     }
 
+    showWinners();
     closeSDL();
-    return 0;
+
+    return EXIT_SUCCESS;
 }
